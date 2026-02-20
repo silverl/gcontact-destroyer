@@ -73,13 +73,13 @@ class TestContactsDB:
         alice = next(c for c in results if c.resource_name == "people/c1")
         assert alice.display_name == "Alice Johnson"
 
-    def test_upsert_updates_status_protected_to_unmarked(self, db, sample_contacts):
-        """When Keep label is removed in Google, sync should un-protect the contact."""
+    def test_upsert_preserves_protected_status(self, db, sample_contacts):
+        """Protected is a local user decision; sync should not overwrite it."""
         db.upsert_contacts(sample_contacts)
         db.set_status("people/c1", Status.PROTECTED)
         assert db.get_contact("people/c1").status == Status.PROTECTED
 
-        # Re-sync the same contact without PROTECTED status (Keep label removed)
+        # Re-sync the same contact without PROTECTED status
         re_synced = Contact(
             resource_name="people/c1",
             display_name="Alice Smith",
@@ -88,7 +88,7 @@ class TestContactsDB:
             etag="e1-v2",
         )
         db.upsert_contacts([re_synced])
-        assert db.get_contact("people/c1").status == Status.UNMARKED
+        assert db.get_contact("people/c1").status == Status.PROTECTED
 
     def test_upsert_preserves_trashed_status(self, db, sample_contacts):
         """Trashed is a local user decision; sync should not overwrite it."""

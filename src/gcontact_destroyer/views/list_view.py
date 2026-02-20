@@ -31,11 +31,6 @@ class ListView(Container):
     class FlushRequested(Message):
         """Posted when user presses f to flush deletions."""
 
-    class KeepLabelRequested(Message):
-        def __init__(self, resource_name: str) -> None:
-            super().__init__()
-            self.resource_name = resource_name
-
     class OpenCard(Message):
         """Posted when user presses Enter to open card view at current index."""
         def __init__(self, index: int) -> None:
@@ -139,7 +134,6 @@ class ListView(Container):
         self.db.set_status(contact.resource_name, Status.PROTECTED)
         self.reload_contacts()
         self.post_message(self.StatusChanged())
-        self.post_message(self.KeepLabelRequested(contact.resource_name))
 
     def action_undo(self) -> None:
         if not self.app._undo_stack:

@@ -726,6 +726,7 @@ class TestProtectedView:
             assert db.get_contact("people/c4").status == Status.UNMARKED
 
 
+
 @pytest.fixture
 def trash_db(tmp_path):
     db_path = tmp_path / "trash_test.db"
@@ -881,31 +882,6 @@ class TestTrashView:
             from gcontact_destroyer.views.expand_panel import ContactDetailScreen
             screens = [s for s in pilot.app.screen_stack if isinstance(s, ContactDetailScreen)]
             assert len(screens) == 1
-
-    @pytest.mark.asyncio
-    async def test_protect_posts_keep_label_requested(self, trash_db):
-        messages = []
-
-        class CapturingApp(App):
-            def __init__(self_app):
-                super().__init__()
-                self_app._undo_stack: list[tuple[str, Status]] = []
-
-            def compose(self_app):
-                yield TrashView(db=trash_db)
-
-            def on_trash_view_keep_label_requested(self_app, event):
-                messages.append(event)
-
-        async with CapturingApp().run_test() as pilot:
-            view = pilot.app.query_one(TrashView)
-            await pilot.pause()
-            view.table.focus()
-            await pilot.pause()
-            await pilot.press("*")
-            await pilot.pause()
-            assert len(messages) == 1
-            assert messages[0].resource_name == "people/t1"
 
     @pytest.mark.asyncio
     async def test_search_filters_contacts(self, trash_db):

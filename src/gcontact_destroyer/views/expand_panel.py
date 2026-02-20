@@ -241,11 +241,6 @@ class ExpandPanel(Vertical):
     class PanelEmpty(Message):
         pass
 
-    class KeepLabelRequested(Message):
-        def __init__(self, resource_name: str) -> None:
-            super().__init__()
-            self.resource_name = resource_name
-
     def __init__(self, db: ContactsDB, **kwargs) -> None:
         super().__init__(**kwargs)
         self.db = db
@@ -359,7 +354,6 @@ class ExpandPanel(Vertical):
         ]
         self._refresh_table()
         self.post_message(self.StatusChanged())
-        self.post_message(self.KeepLabelRequested(contact.resource_name))
 
     def action_undo(self) -> None:
         if not self.app._undo_stack:
@@ -421,7 +415,6 @@ class ExpandPanel(Vertical):
                 ]
                 self._refresh_table()
                 self.post_message(self.StatusChanged())
-                self.post_message(self.KeepLabelRequested(contact.resource_name))
 
         self.app.push_screen(
             ContactDetailScreen(

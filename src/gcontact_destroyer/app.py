@@ -15,7 +15,6 @@ from gcontact_destroyer.google_api import GooglePeopleAPI
 from gcontact_destroyer.models import Status
 from gcontact_destroyer.views.batch_view import BatchView
 from gcontact_destroyer.views.card_view import CardView
-from gcontact_destroyer.views.expand_panel import ExpandPanel
 from gcontact_destroyer.views.list_view import ListView
 from gcontact_destroyer.views.protected_view import ProtectedView
 from gcontact_destroyer.views.trash_view import TrashView
@@ -234,24 +233,6 @@ class GContactDestroyer(App):
             self.notify(f"Synced {len(contacts)} contacts", severity="information")
             self.refresh_stats()
 
-            # Apply Keep label to locally-protected contacts not in this sync batch.
-            # Contacts IN the sync batch already reflect Google's current state,
-            # so we only push Keep for contacts that weren't synced (e.g. locally
-            # protected via * key but not yet changed in Google).
-            if keep_group:
-                synced_names = {c.resource_name for c in contacts}
-                protected = self.db.get_contacts(status=Status.PROTECTED)
-                missing = [
-                    c.resource_name for c in protected
-                    if c.resource_name not in synced_names
-                ]
-                if missing:
-                    api.add_to_group(keep_group, missing)
-                    self.notify(
-                        f"Applied Keep label to {len(missing)} contacts",
-                        severity="information",
-                    )
-
             from gcontact_destroyer.views.list_view import ListView
 
             list_view = self.query_one("#list-view", ListView)
@@ -263,33 +244,37 @@ class GContactDestroyer(App):
 
     async def _do_flush(self) -> None:
         trashed = self.db.get_contacts(status=Status.TRASHED)
-        if not trashed:
-            self.notify("Nothing to flush", severity="warning")
-            return
-
-        resource_names = [c.resource_name for c in trashed]
-        self.notify(f"Flushing {len(resource_names)} contacts...")
 
         try:
             api = await self._get_api()
 
-            # Batch delete
-            failed = api.batch_delete(resource_names)
+            # Reconcile Keep group membership with local protection status
+            keep_changes = await self._sync_keep_group(api)
 
-            # Remove successful deletes from local DB
-            succeeded = [n for n in resource_names if n not in failed]
-            self.db.delete_contacts(succeeded)
+            if not trashed and not keep_changes:
+                self.notify("Nothing to flush", severity="warning")
+                return
 
-            if failed:
-                self.notify(
-                    f"Deleted {len(succeeded)}, {len(failed)} failed",
-                    severity="warning",
-                )
-            else:
-                self.notify(
-                    f"Successfully deleted {len(succeeded)} contacts",
-                    severity="information",
-                )
+            # Batch delete trashed contacts
+            if trashed:
+                resource_names = [c.resource_name for c in trashed]
+                self.notify(f"Flushing {len(resource_names)} contacts...")
+
+                failed = api.batch_delete(resource_names)
+
+                succeeded = [n for n in resource_names if n not in failed]
+                self.db.delete_contacts(succeeded)
+
+                if failed:
+                    self.notify(
+                        f"Deleted {len(succeeded)}, {len(failed)} failed",
+                        severity="warning",
+                    )
+                else:
+                    self.notify(
+                        f"Successfully deleted {len(succeeded)} contacts",
+                        severity="information",
+                    )
 
             self.refresh_stats()
             from gcontact_destroyer.views.list_view import ListView
@@ -302,6 +287,52 @@ class GContactDestroyer(App):
 
         except Exception as e:
             self.notify(f"Flush failed: {e}", severity="error")
+
+    async def _sync_keep_group(self, api: GooglePeopleAPI) -> bool:
+        """Reconcile Google Keep group with local protection status.
+
+        Returns True if any changes were pushed to Google.
+        """
+        import json as _json
+
+        keep_group = api.find_group_resource_name(KEEP_LABEL)
+        if keep_group is None:
+            keep_group = api.create_contact_group(KEEP_LABEL)
+
+        all_contacts = self.db.get_contacts()
+
+        to_add = []
+        to_remove = []
+        for c in all_contacts:
+            if c.status == Status.TRASHED:
+                continue
+
+            raw = c.raw_json
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            in_keep = keep_group in [
+                m["contactGroupMembership"]["contactGroupResourceName"]
+                for m in raw.get("memberships", [])
+                if "contactGroupMembership" in m
+            ]
+
+            if c.status == Status.PROTECTED and not in_keep:
+                to_add.append(c.resource_name)
+            elif c.status != Status.PROTECTED and in_keep:
+                to_remove.append(c.resource_name)
+
+        if to_add:
+            api.add_to_group(keep_group, to_add)
+        if to_remove:
+            api.remove_from_group(keep_group, to_remove)
+
+        changed = bool(to_add or to_remove)
+        if changed:
+            self.notify(
+                f"Keep group: +{len(to_add)} / -{len(to_remove)}",
+                severity="information",
+            )
+        return changed
 
     def action_switch_view(self, view: str) -> None:
         for name in ("list", "card", "protected", "trash", "batch"):
@@ -401,28 +432,6 @@ class GContactDestroyer(App):
 
     def on_trash_view_flush_requested(self, event) -> None:
         self._confirm_flush()
-
-    def on_trash_view_keep_label_requested(self, event: TrashView.KeepLabelRequested) -> None:
-        self.run_worker(self._apply_keep_label(event.resource_name))
-
-    def on_list_view_keep_label_requested(self, event: ListView.KeepLabelRequested) -> None:
-        self.run_worker(self._apply_keep_label(event.resource_name))
-
-    def on_card_view_keep_label_requested(self, event: CardView.KeepLabelRequested) -> None:
-        self.run_worker(self._apply_keep_label(event.resource_name))
-
-    def on_expand_panel_keep_label_requested(self, event: ExpandPanel.KeepLabelRequested) -> None:
-        self.run_worker(self._apply_keep_label(event.resource_name))
-
-    async def _apply_keep_label(self, resource_name: str) -> None:
-        try:
-            api = await self._get_api()
-            group = api.find_group_resource_name(KEEP_LABEL)
-            if group is None:
-                group = api.create_contact_group(KEEP_LABEL)
-            api.add_to_group(group, [resource_name])
-        except Exception as e:
-            self.notify(f"Failed to apply Keep label: {e}", severity="error")
 
 
 def main() -> None:

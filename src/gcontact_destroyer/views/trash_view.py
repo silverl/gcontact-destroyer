@@ -31,11 +31,6 @@ class TrashView(Container):
     class FlushRequested(Message):
         """Posted when user presses f to flush deletions."""
 
-    class KeepLabelRequested(Message):
-        def __init__(self, resource_name: str) -> None:
-            super().__init__()
-            self.resource_name = resource_name
-
     def __init__(self, db: ContactsDB, **kwargs) -> None:
         super().__init__(**kwargs)
         self.db = db
@@ -138,7 +133,6 @@ class TrashView(Container):
             return
         self.app._undo_stack.append((contact.resource_name, contact.status))
         self.db.set_status(contact.resource_name, Status.PROTECTED)
-        self.post_message(self.KeepLabelRequested(contact.resource_name))
         self.reload_contacts()
         self.post_message(self.StatusChanged())
 
@@ -188,7 +182,6 @@ class TrashView(Container):
             elif action == "protect":
                 self.app._undo_stack.append((contact.resource_name, contact.status))
                 self.db.set_status(contact.resource_name, Status.PROTECTED)
-                self.post_message(self.KeepLabelRequested(contact.resource_name))
                 self.reload_contacts()
                 self.post_message(self.StatusChanged())
 

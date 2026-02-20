@@ -61,7 +61,8 @@ class ContactsDB:
                            phones=excluded.phones,
                            organizations=excluded.organizations,
                            status = CASE
-                               WHEN contacts.status = 'trashed' THEN contacts.status
+                               WHEN contacts.status IN ('trashed', 'protected')
+                                   THEN contacts.status
                                ELSE excluded.status
                            END,
                            etag=excluded.etag,

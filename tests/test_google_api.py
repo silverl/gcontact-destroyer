@@ -181,6 +181,15 @@ class TestAddToGroup:
         mock_service.contactGroups().members().modify.assert_called()
 
 
+class TestRemoveFromGroup:
+    def test_remove_from_group(self, api, mock_service):
+        mock_service.contactGroups().members().modify().execute.return_value = {}
+
+        api.remove_from_group("contactGroups/abc", ["people/c1", "people/c2"])
+
+        mock_service.contactGroups().members().modify.assert_called()
+
+
 class TestAuthenticateAsync:
     async def test_delegates_to_sync_authenticate(self, tmp_path):
         fake_api = GooglePeopleAPI(service=MagicMock(), token_path=tmp_path / "t.json")

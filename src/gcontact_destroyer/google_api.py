@@ -193,3 +193,13 @@ class GooglePeopleAPI:
             resourceName=group_resource_name,
             body={"resourceNamesToAdd": resource_names},
         ).execute()
+
+    def remove_from_group(
+        self,
+        group_resource_name: str,
+        resource_names: list[str],
+    ) -> None:
+        self._service.contactGroups().members().modify(
+            resourceName=group_resource_name,
+            body={"resourceNamesToRemove": resource_names},
+        ).execute()

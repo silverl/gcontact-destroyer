@@ -74,11 +74,6 @@ class CardView(Container, can_focus=True):
     class FlushRequested(Message):
         pass
 
-    class KeepLabelRequested(Message):
-        def __init__(self, resource_name: str) -> None:
-            super().__init__()
-            self.resource_name = resource_name
-
     class BackToList(Message):
         def __init__(self, index: int) -> None:
             super().__init__()
@@ -261,7 +256,6 @@ class CardView(Container, can_focus=True):
             self._index = max(0, len(self._contacts) - 1)
         self._render_card()
         self.post_message(self.StatusChanged())
-        self.post_message(self.KeepLabelRequested(contact.resource_name))
 
     def action_undo_card(self) -> None:
         if not self.app._undo_stack:

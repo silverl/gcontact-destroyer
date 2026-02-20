@@ -203,10 +203,11 @@ class TestStatsBarUnit:
         assert callable(bar.update_stats)
 
 
-class TestApplyKeepLabelAutoCreate:
+class TestSyncKeepGroup:
     @pytest.fixture
     def mock_api(self):
         api = MagicMock(spec=GooglePeopleAPI)
+        api.find_group_resource_name.return_value = "contactGroups/keep"
         return api
 
     @pytest.fixture
@@ -215,32 +216,92 @@ class TestApplyKeepLabelAutoCreate:
         app = GContactDestroyer(db_path=db_path, api=mock_api)
         return app
 
+    async def test_adds_protected_contacts_to_keep_group(
+        self, app_with_mock_api, mock_api
+    ):
+        app_with_mock_api.db.upsert_contacts([
+            Contact(
+                resource_name="people/c1",
+                display_name="Alice",
+                emails=["alice@test.com"],
+                status=Status.PROTECTED,
+                raw_json={"memberships": []},
+            ),
+        ])
+
+        async with app_with_mock_api.run_test():
+            changed = await app_with_mock_api._sync_keep_group(mock_api)
+
+        assert changed is True
+        mock_api.add_to_group.assert_called_once_with(
+            "contactGroups/keep", ["people/c1"]
+        )
+        mock_api.remove_from_group.assert_not_called()
+
+    async def test_removes_unprotected_contacts_from_keep_group(
+        self, app_with_mock_api, mock_api
+    ):
+        app_with_mock_api.db.upsert_contacts([
+            Contact(
+                resource_name="people/c1",
+                display_name="Alice",
+                emails=["alice@test.com"],
+                status=Status.UNMARKED,
+                raw_json={
+                    "memberships": [
+                        {"contactGroupMembership": {
+                            "contactGroupResourceName": "contactGroups/keep"
+                        }}
+                    ]
+                },
+            ),
+        ])
+
+        async with app_with_mock_api.run_test():
+            changed = await app_with_mock_api._sync_keep_group(mock_api)
+
+        assert changed is True
+        mock_api.remove_from_group.assert_called_once_with(
+            "contactGroups/keep", ["people/c1"]
+        )
+        mock_api.add_to_group.assert_not_called()
+
+    async def test_no_changes_returns_false(
+        self, app_with_mock_api, mock_api
+    ):
+        app_with_mock_api.db.upsert_contacts([
+            Contact(
+                resource_name="people/c1",
+                display_name="Alice",
+                emails=["alice@test.com"],
+                status=Status.PROTECTED,
+                raw_json={
+                    "memberships": [
+                        {"contactGroupMembership": {
+                            "contactGroupResourceName": "contactGroups/keep"
+                        }}
+                    ]
+                },
+            ),
+        ])
+
+        async with app_with_mock_api.run_test():
+            changed = await app_with_mock_api._sync_keep_group(mock_api)
+
+        assert changed is False
+        mock_api.add_to_group.assert_not_called()
+        mock_api.remove_from_group.assert_not_called()
+
     async def test_auto_creates_keep_group_when_missing(
         self, app_with_mock_api, mock_api
     ):
         mock_api.find_group_resource_name.return_value = None
         mock_api.create_contact_group.return_value = "contactGroups/new123"
-        mock_api.add_to_group.return_value = None
 
         async with app_with_mock_api.run_test():
-            await app_with_mock_api._apply_keep_label("people/c1")
+            await app_with_mock_api._sync_keep_group(mock_api)
 
         mock_api.create_contact_group.assert_called_once_with("Keep")
-        mock_api.add_to_group.assert_called_once_with(
-            "contactGroups/new123", ["people/c1"]
-        )
-
-    async def test_uses_existing_keep_group(self, app_with_mock_api, mock_api):
-        mock_api.find_group_resource_name.return_value = "contactGroups/existing"
-        mock_api.add_to_group.return_value = None
-
-        async with app_with_mock_api.run_test():
-            await app_with_mock_api._apply_keep_label("people/c1")
-
-        mock_api.create_contact_group.assert_not_called()
-        mock_api.add_to_group.assert_called_once_with(
-            "contactGroups/existing", ["people/c1"]
-        )
 
 
 class TestConfirmScreen:
