@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+credentials.json
+token.json
+*.db
+.textual/
+.beads/
+.claude/
+.ruff_cache/
+.worktrees/
+docs/plans/
+uv.lock
