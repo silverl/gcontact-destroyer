@@ -18,7 +18,9 @@ Built with [Textual](https://textual.textualize.io/), gcontact-destroyer syncs y
 
 Deleted contacts land in Google Contacts trash and stay recoverable for at least 30 days, so there's little risk of permanent data loss.
 
-> **Disclaimer:** This project was 100% vibe-coded with [Claude Code](https://claude.ai/). The author takes no responsibility for any damage this application does to your contacts. Use at your own risk. That said, deleted contacts go to Google's trash and are recoverable for 30 days, so the blast radius is limited.
+## Disclaimer
+
+This project was 100% vibe-coded with [Claude Code](https://claude.ai/). The author takes no responsibility for any damage this application does to your contacts. Use at your own risk. That said, deleted contacts go to Google's trash and are recoverable for 30 days, so the blast radius is limited.
 
 ## Before You Start
 
