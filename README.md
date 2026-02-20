@@ -26,6 +26,8 @@ This project was 100% vibe-coded with [Claude Code](https://claude.ai/). The aut
 
 This app talks directly to the Google People API using OAuth, which means you need to set up your own Google Cloud project before it will do anything. That involves creating a project in the Google Cloud Console, enabling the People API, configuring an OAuth consent screen, and downloading a credentials JSON file. If you've never done this before, expect to spend 10-15 minutes clicking through Google's setup wizards. The full walkthrough is in [Google Cloud Setup](docs/google-setup.md).
 
+See `credentials.json.example` in this repo for the expected file structure.
+
 If that sounds like too much, this tool probably isn't for you. There's no way around it since Google doesn't offer a simpler path for personal API access.
 
 ## Prerequisites
