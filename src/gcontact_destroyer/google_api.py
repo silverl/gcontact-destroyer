@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,6 +13,12 @@ from gcontact_destroyer.config import (
     ensure_dirs,
 )
 from gcontact_destroyer.models import Contact
+
+OAUTH_TIMEOUT = 120  # seconds to wait for OAuth before giving up
+
+
+class OAuthError(Exception):
+    """Raised when OAuth authentication fails or times out."""
 
 
 class GooglePeopleAPI:
@@ -64,6 +71,28 @@ class GooglePeopleAPI:
 
         service = build("people", "v1", credentials=creds)
         return cls(service=service, token_path=token_path)
+
+    @classmethod
+    async def authenticate_async(
+        cls,
+        credentials_path: Path = CREDENTIALS_PATH,
+        token_path: Path = TOKEN_PATH,
+    ) -> GooglePeopleAPI:
+        """Async-safe authenticate that won't block the event loop.
+
+        Runs the blocking OAuth flow in a separate thread with a timeout
+        so the TUI stays responsive (Ctrl+C, etc. still work).
+        """
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(cls.authenticate, credentials_path, token_path),
+                timeout=OAUTH_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise OAuthError(
+                f"OAuth timed out after {OAUTH_TIMEOUT}s. "
+                "Please retry — make sure your browser completed the sign-in."
+            )
 
     def fetch_all_contacts(
         self,

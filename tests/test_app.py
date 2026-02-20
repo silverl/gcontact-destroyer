@@ -1,11 +1,11 @@
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from gcontact_destroyer.app import ConfirmScreen, GContactDestroyer, StatsBar, SyncPromptScreen
-from gcontact_destroyer.google_api import GooglePeopleAPI
+from gcontact_destroyer.google_api import GooglePeopleAPI, OAuthError
 from gcontact_destroyer.models import Contact, Status
 
 
@@ -334,3 +334,38 @@ class TestFlushConfirmation:
             contact = app.db.get_contact("people/c1")
             assert contact is not None
             assert contact.status == Status.TRASHED
+
+
+class TestGetApiAsync:
+    async def test_get_api_returns_cached_api(self, tmp_path):
+        mock_api = MagicMock(spec=GooglePeopleAPI)
+        app = GContactDestroyer(db_path=tmp_path / "test.db", api=mock_api)
+        async with app.run_test():
+            result = await app._get_api()
+            assert result is mock_api
+
+    async def test_get_api_authenticates_when_no_api(self, tmp_path):
+        app = GContactDestroyer(db_path=tmp_path / "test.db")
+        fake_api = MagicMock(spec=GooglePeopleAPI)
+        with patch.object(
+            GooglePeopleAPI, "authenticate_async", return_value=fake_api
+        ) as mock_auth:
+            async with app.run_test():
+                result = await app._get_api()
+        mock_auth.assert_called_once()
+        assert result is fake_api
+
+    async def test_sync_shows_error_on_oauth_timeout(self, tmp_path, sample_contacts):
+        app = GContactDestroyer(db_path=tmp_path / "test.db")
+        app.db.upsert_contacts(sample_contacts)
+        with patch.object(
+            GooglePeopleAPI,
+            "authenticate_async",
+            side_effect=OAuthError("OAuth timed out"),
+        ):
+            async with app.run_test() as pilot:
+                app.run_worker(app._do_sync())
+                await pilot.pause()
+                await pilot.pause()
+                # App should still be responsive (not frozen)
+                assert app.is_running

@@ -1,8 +1,9 @@
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gcontact_destroyer.google_api import GooglePeopleAPI
+from gcontact_destroyer.google_api import GooglePeopleAPI, OAuthError
 
 
 @pytest.fixture
@@ -178,3 +179,44 @@ class TestAddToGroup:
         api.add_to_group("contactGroups/abc", ["people/c1", "people/c2"])
 
         mock_service.contactGroups().members().modify.assert_called()
+
+
+class TestAuthenticateAsync:
+    async def test_delegates_to_sync_authenticate(self, tmp_path):
+        fake_api = GooglePeopleAPI(service=MagicMock(), token_path=tmp_path / "t.json")
+        with patch.object(
+            GooglePeopleAPI, "authenticate", return_value=fake_api
+        ) as mock_auth:
+            result = await GooglePeopleAPI.authenticate_async(
+                credentials_path=tmp_path / "creds.json",
+                token_path=tmp_path / "t.json",
+            )
+        mock_auth.assert_called_once_with(
+            tmp_path / "creds.json", tmp_path / "t.json"
+        )
+        assert result is fake_api
+
+    async def test_timeout_raises_oauth_error(self, tmp_path):
+        def hang_forever(*args, **kwargs):
+            import time
+            time.sleep(10)
+
+        with patch.object(GooglePeopleAPI, "authenticate", side_effect=hang_forever):
+            with patch("gcontact_destroyer.google_api.OAUTH_TIMEOUT", 0.1):
+                with pytest.raises(OAuthError, match="timed out"):
+                    await GooglePeopleAPI.authenticate_async(
+                        credentials_path=tmp_path / "creds.json",
+                        token_path=tmp_path / "t.json",
+                    )
+
+    async def test_propagates_auth_exceptions(self, tmp_path):
+        with patch.object(
+            GooglePeopleAPI,
+            "authenticate",
+            side_effect=FileNotFoundError("no creds"),
+        ):
+            with pytest.raises(FileNotFoundError, match="no creds"):
+                await GooglePeopleAPI.authenticate_async(
+                    credentials_path=tmp_path / "creds.json",
+                    token_path=tmp_path / "t.json",
+                )

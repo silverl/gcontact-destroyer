@@ -155,9 +155,9 @@ class GContactDestroyer(App):
         self._current_view = "list"
         self._undo_stack: list[tuple[str, Status]] = []
 
-    def _get_api(self) -> GooglePeopleAPI:
+    async def _get_api(self) -> GooglePeopleAPI:
         if self._api is None:
-            self._api = GooglePeopleAPI.authenticate()
+            self._api = await GooglePeopleAPI.authenticate_async()
         return self._api
 
     def compose(self) -> ComposeResult:
@@ -202,7 +202,7 @@ class GContactDestroyer(App):
     async def _do_sync(self) -> None:
         self.notify("Syncing contacts from Google...")
         try:
-            api = self._get_api()
+            api = await self._get_api()
             sync_token = self.db.get_sync_token()
             contacts = api.fetch_all_contacts(sync_token=sync_token)
 
@@ -271,7 +271,7 @@ class GContactDestroyer(App):
         self.notify(f"Flushing {len(resource_names)} contacts...")
 
         try:
-            api = self._get_api()
+            api = await self._get_api()
 
             # Batch delete
             failed = api.batch_delete(resource_names)
@@ -416,7 +416,7 @@ class GContactDestroyer(App):
 
     async def _apply_keep_label(self, resource_name: str) -> None:
         try:
-            api = self._get_api()
+            api = await self._get_api()
             group = api.find_group_resource_name(KEEP_LABEL)
             if group is None:
                 group = api.create_contact_group(KEEP_LABEL)
@@ -427,6 +427,7 @@ class GContactDestroyer(App):
 
 def main() -> None:
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser(description="Google Contact Destroyer")
     parser.add_argument(
@@ -434,7 +435,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    app = GContactDestroyer()
+    # Pre-authenticate before Textual takes over the terminal.
+    # This keeps the OAuth browser flow in the normal terminal where
+    # Ctrl+C and other input still work.
+    api = None
+    if args.sync:
+        try:
+            api = GooglePeopleAPI.authenticate()
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Authentication failed: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    app = GContactDestroyer(api=api)
     app._sync_on_start = args.sync
     app.run()
 
