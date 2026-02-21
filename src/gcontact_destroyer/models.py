@@ -79,28 +79,19 @@ class Contact:
 
     @property
     def notes(self) -> str:
-        raw = self.raw_json
-        if isinstance(raw, str):
-            raw = json.loads(raw)
-        bios = raw.get("biographies", [])
+        bios = self.raw_json.get("biographies", [])
         if bios:
             return bios[0].get("value", "")
         return ""
 
     @property
     def nickname(self) -> str:
-        raw = self.raw_json
-        if isinstance(raw, str):
-            raw = json.loads(raw)
-        nicks = raw.get("nicknames", [])
+        nicks = self.raw_json.get("nicknames", [])
         return nicks[0].get("value", "") if nicks else ""
 
     @property
     def birthday(self) -> str:
-        raw = self.raw_json
-        if isinstance(raw, str):
-            raw = json.loads(raw)
-        bdays = raw.get("birthdays", [])
+        bdays = self.raw_json.get("birthdays", [])
         if not bdays:
             return ""
         bday = bdays[0]
@@ -120,10 +111,7 @@ class Contact:
 
     @property
     def urls(self) -> list[str]:
-        raw = self.raw_json
-        if isinstance(raw, str):
-            raw = json.loads(raw)
-        return [u["value"] for u in raw.get("urls", []) if u.get("value")]
+        return [u["value"] for u in self.raw_json.get("urls", []) if u.get("value")]
 
     @property
     def is_sparse(self) -> bool:

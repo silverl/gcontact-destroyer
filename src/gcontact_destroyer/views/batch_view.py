@@ -114,28 +114,26 @@ class BatchView(Container):
         self._get_active_table().focus(scroll_visible)
 
     def reload_data(self) -> None:
-        self._load_domains()
-        self._load_sparse()
-        self._load_labels()
+        domain_counts, sparse_counts, label_counts = self.db.get_batch_counts()
+        self._load_domains(domain_counts)
+        self._load_sparse(sparse_counts)
+        self._load_labels(label_counts)
 
-    def _load_domains(self) -> None:
+    def _load_domains(self, counts: dict[str, int]) -> None:
         table = self.domain_table
         table.clear()
-        counts = self.db.get_domain_counts()
         for domain, count in counts.items():
             table.add_row(domain, str(count), key=domain)
 
-    def _load_sparse(self) -> None:
+    def _load_sparse(self, counts: dict[str, int]) -> None:
         table = self.sparse_table
         table.clear()
-        counts = self.db.get_sparse_counts()
         for label, count in counts.items():
             table.add_row(label, str(count), key=label)
 
-    def _load_labels(self) -> None:
+    def _load_labels(self, label_counts: dict[str, int]) -> None:
         table = self.label_table
         table.clear()
-        label_counts = self.db.get_label_counts()
         group_names = self.db.get_group_names()
         if not label_counts:
             table.add_row("(no non-protected labels)", "", key="__empty__")
@@ -211,15 +209,16 @@ class BatchView(Container):
         def on_confirm(confirmed: bool) -> None:
             if not confirmed:
                 return
-            for c in contacts:
-                if c.status != Status.PROTECTED:
-                    self.db.set_status(c.resource_name, Status.TRASHED)
+            to_trash = [c for c in contacts if c.status != Status.PROTECTED]
+            self.db.set_status_bulk(
+                [c.resource_name for c in to_trash], Status.TRASHED
+            )
 
             table = self._get_active_table()
             prev_row = table.cursor_row
 
             self.app.notify(
-                f"Marked {len(contacts)} contacts as trashed",
+                f"Marked {len(to_trash)} contacts as trashed",
                 severity="information",
             )
             self.reload_data()

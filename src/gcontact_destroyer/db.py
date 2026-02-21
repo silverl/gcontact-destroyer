@@ -12,12 +12,12 @@ from gcontact_destroyer.models import Contact, Status
 class ContactsDB:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
+        self._conn = sqlite3.connect(db_path)
+        self._conn.row_factory = sqlite3.Row
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return self._conn
 
     def _init_db(self) -> None:
         with self._connect() as conn:
@@ -114,6 +114,16 @@ class ContactsDB:
                 (status.value, resource_name),
             )
 
+    def set_status_bulk(self, resource_names: list[str], status: Status) -> None:
+        if not resource_names:
+            return
+        placeholders = ",".join("?" for _ in resource_names)
+        with self._conn as conn:
+            conn.execute(
+                f"UPDATE contacts SET status = ? WHERE resource_name IN ({placeholders})",
+                [status.value] + resource_names,
+            )
+
     def search(self, query: str, exclude_protected: bool = True) -> list[Contact]:
         pattern = f"%{query}%"
         sql = """
@@ -188,13 +198,50 @@ class ContactsDB:
                     counter[group_name] += 1
         return dict(counter.most_common())
 
-    def get_contacts_by_label(self, group_resource_name: str) -> list[Contact]:
+    def get_batch_counts(self) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+        """Return (domain_counts, sparse_counts, label_counts) in a single pass."""
         contacts = self.get_contacts(status=Status.UNMARKED)
-        result = []
+        domain_counter: Counter[str] = Counter()
+        sparse_counter: Counter[str] = Counter()
+        label_counter: Counter[str] = Counter()
         for c in contacts:
+            # Domain counts
+            domain = c.email_domain
+            key = domain if domain else "(no email)"
+            domain_counter[key] += 1
+            # Sparse counts
+            label = c.completeness_label
+            if label != "Complete":
+                sparse_counter[label] += 1
+            # Label counts
             raw = c.raw_json
             if isinstance(raw, str):
                 raw = json.loads(raw)
+            for m in raw.get("memberships", []):
+                cgm = m.get("contactGroupMembership", {})
+                group_name = cgm.get("contactGroupResourceName", "")
+                if group_name and group_name not in (
+                    "contactGroups/myContacts",
+                    "contactGroups/starred",
+                ):
+                    label_counter[group_name] += 1
+        return (
+            dict(domain_counter.most_common()),
+            dict(sparse_counter.most_common()),
+            dict(label_counter.most_common()),
+        )
+
+    def get_contacts_by_label(self, group_resource_name: str) -> list[Contact]:
+        pattern = f'%"{group_resource_name}"%'
+        with self._conn as conn:
+            rows = conn.execute(
+                "SELECT * FROM contacts WHERE raw_json LIKE ? AND status = ? ORDER BY display_name",
+                (pattern, Status.UNMARKED.value),
+            ).fetchall()
+        candidates = [Contact.from_db_row(dict(r)) for r in rows]
+        result = []
+        for c in candidates:
+            raw = c.raw_json
             for m in raw.get("memberships", []):
                 cgm = m.get("contactGroupMembership", {})
                 if cgm.get("contactGroupResourceName") == group_resource_name:
@@ -203,22 +250,16 @@ class ContactsDB:
         return result
 
     def get_stats(self) -> dict[str, int]:
-        with self._connect() as conn:
-            total = conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
-            protected = conn.execute(
-                "SELECT COUNT(*) FROM contacts WHERE status = ?",
-                (Status.PROTECTED.value,),
-            ).fetchone()[0]
-            trashed = conn.execute(
-                "SELECT COUNT(*) FROM contacts WHERE status = ?",
-                (Status.TRASHED.value,),
-            ).fetchone()[0]
-            return {
-                "total": total,
-                "protected": protected,
-                "trashed": trashed,
-                "remaining": total - protected - trashed,
-            }
+        with self._conn as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS protected,
+                       SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS trashed
+                FROM contacts
+            """, (Status.PROTECTED.value, Status.TRASHED.value)).fetchone()
+            total, protected, trashed = row[0], row[1] or 0, row[2] or 0
+            return {"total": total, "protected": protected, "trashed": trashed,
+                    "remaining": total - protected - trashed}
 
     def save_group_names(self, groups: dict[str, str]) -> None:
         """Save a mapping of group resource names to display names."""

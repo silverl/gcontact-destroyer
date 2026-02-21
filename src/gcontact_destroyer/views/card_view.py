@@ -122,6 +122,7 @@ class CardView(Container, can_focus=True):
             for c in self._contacts
             if c.status != Status.TRASHED and (c.display_name or c.emails or c.phones)
         ]
+        self._group_names = self.db.get_group_names()
         self._index = min(start_index, max(0, len(self._contacts) - 1))
         self._render_card()
 
@@ -192,12 +193,8 @@ class CardView(Container, can_focus=True):
             "contactGroups/starred",
             "contactGroups/all",
         }
-        group_names_map = self.db.get_group_names()
-        raw = contact.raw_json
-        if isinstance(raw, str):
-            import json
-            raw = json.loads(raw)
-        memberships = raw.get("memberships", [])
+        group_names_map = self._group_names
+        memberships = contact.raw_json.get("memberships", [])
         group_resource_names = [
             m["contactGroupMembership"]["contactGroupResourceName"]
             for m in memberships

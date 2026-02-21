@@ -86,6 +86,29 @@ class TestListView:
             await pilot.pause()
             assert list_view.table.cursor_row == 1
 
+    @pytest.mark.asyncio
+    async def test_trash_removes_single_row_not_full_reload(self, db):
+        """Trashing a contact removes just that row from the table."""
+        async with ListViewTestApp(db).run_test() as pilot:
+            list_view = pilot.app.query_one(ListView)
+            await pilot.pause()
+            initial_count = list_view.table.row_count
+            assert initial_count == 2
+            await pilot.press("x")
+            await pilot.pause()
+            assert list_view.table.row_count == initial_count - 1
+
+    @pytest.mark.asyncio
+    async def test_protect_removes_single_row(self, db):
+        """Protecting a contact removes just that row from the table."""
+        async with ListViewTestApp(db).run_test() as pilot:
+            list_view = pilot.app.query_one(ListView)
+            await pilot.pause()
+            initial_count = list_view.table.row_count
+            await pilot.press("*")
+            await pilot.pause()
+            assert list_view.table.row_count == initial_count - 1
+
 
 class CardViewTestApp(App):
     def __init__(self, db: ContactsDB):
@@ -926,6 +949,30 @@ class TestTrashView:
             await pilot.pause()
             await pilot.press("k")
             await pilot.pause()
+
+    @pytest.mark.asyncio
+    async def test_untrash_removes_single_row(self, trash_db):
+        """Un-trashing a contact removes just that row from trash view."""
+        async with TrashViewTestApp(trash_db).run_test() as pilot:
+            view = pilot.app.query_one(TrashView)
+            await pilot.pause()
+            initial_count = view.table.row_count
+            assert initial_count == 2
+            await pilot.press("u")
+            await pilot.pause()
+            assert view.table.row_count == initial_count - 1
+
+    @pytest.mark.asyncio
+    async def test_protect_removes_single_row(self, trash_db):
+        """Protecting a trashed contact removes just that row."""
+        async with TrashViewTestApp(trash_db).run_test() as pilot:
+            view = pilot.app.query_one(TrashView)
+            await pilot.pause()
+            initial_count = view.table.row_count
+            assert initial_count == 2
+            await pilot.press("*")
+            await pilot.pause()
+            assert view.table.row_count == initial_count - 1
 
 
 class TestBatchCategoryTrashConfirmation:

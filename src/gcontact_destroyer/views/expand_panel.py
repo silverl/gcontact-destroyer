@@ -163,11 +163,7 @@ class ContactDetailScreen(ModalScreen[tuple[str | None, Contact | None]]):
             "contactGroups/starred",
             "contactGroups/all",
         }
-        raw = c.raw_json
-        if isinstance(raw, str):
-            import json
-            raw = json.loads(raw)
-        memberships = raw.get("memberships", [])
+        memberships = c.raw_json.get("memberships", [])
         group_resource_names = [
             m["contactGroupMembership"]["contactGroupResourceName"]
             for m in memberships
@@ -265,6 +261,7 @@ class ExpandPanel(Vertical):
         self._contacts = [
             c for c in contacts if c.status not in (Status.TRASHED, Status.PROTECTED)
         ]
+        self._group_names = self.db.get_group_names()
         self._refresh_table()
 
     def _refresh_table(self) -> None:
@@ -330,10 +327,12 @@ class ExpandPanel(Vertical):
         def on_confirm(confirmed: bool) -> None:
             if not confirmed:
                 return
-            for c in self._contacts:
-                if c.status != Status.TRASHED:
-                    self.app._undo_stack.append((c.resource_name, c.status))
-                    self.db.set_status(c.resource_name, Status.TRASHED)
+            to_trash = [c for c in self._contacts if c.status != Status.TRASHED]
+            for c in to_trash:
+                self.app._undo_stack.append((c.resource_name, c.status))
+            self.db.set_status_bulk(
+                [c.resource_name for c in to_trash], Status.TRASHED
+            )
             self._contacts.clear()
             self._refresh_table()
             self.post_message(self.StatusChanged())
@@ -418,7 +417,7 @@ class ExpandPanel(Vertical):
 
         self.app.push_screen(
             ContactDetailScreen(
-                self._contacts, row_idx, group_names=self.db.get_group_names()
+                self._contacts, row_idx, group_names=self._group_names
             ),
             handle_result,
         )

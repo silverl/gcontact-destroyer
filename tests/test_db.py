@@ -222,3 +222,82 @@ class TestContactsDB:
         # Should be recent (within the last minute)
         age = datetime.now(timezone.utc) - result
         assert age.total_seconds() < 60
+
+    def test_get_batch_counts(self, db, sample_contacts):
+        db.upsert_contacts(sample_contacts)
+        domain_counts, sparse_counts, label_counts = db.get_batch_counts()
+        assert domain_counts["example.com"] == 1
+        assert domain_counts["bigcorp.com"] == 1
+        assert isinstance(sparse_counts, dict)
+        assert isinstance(label_counts, dict)
+
+    def test_get_batch_counts_excludes_protected(self, db, sample_contacts):
+        db.upsert_contacts(sample_contacts)
+        db.set_status("people/c1", Status.PROTECTED)
+        domain_counts, sparse_counts, label_counts = db.get_batch_counts()
+        assert "example.com" not in domain_counts
+
+    def test_set_status_bulk(self, db, sample_contacts):
+        db.upsert_contacts(sample_contacts)
+        db.set_status_bulk(["people/c1", "people/c2"], Status.TRASHED)
+        assert db.get_contact("people/c1").status == Status.TRASHED
+        assert db.get_contact("people/c2").status == Status.TRASHED
+        assert db.get_contact("people/c3").status == Status.UNMARKED
+
+    def test_set_status_bulk_empty_list(self, db, sample_contacts):
+        db.upsert_contacts(sample_contacts)
+        db.set_status_bulk([], Status.TRASHED)  # Should not error
+        assert db.get_contact("people/c1").status == Status.UNMARKED
+
+    def test_get_stats_single_query(self, db, sample_contacts):
+        """get_stats returns correct counts with a single query."""
+        db.upsert_contacts(sample_contacts)
+        db.set_status("people/c1", Status.PROTECTED)
+        db.set_status("people/c2", Status.TRASHED)
+        stats = db.get_stats()
+        assert stats["total"] == 3
+        assert stats["protected"] == 1
+        assert stats["trashed"] == 1
+        assert stats["remaining"] == 1
+
+    def test_get_contacts_by_label_sql_prefilter(self, db):
+        """get_contacts_by_label uses SQL pre-filter and still returns correct results."""
+        contacts_with_labels = [
+            Contact(
+                resource_name="people/lb1",
+                display_name="Label Person",
+                emails=["label@example.com"],
+                etag="elb1",
+                raw_json={
+                    "memberships": [
+                        {"contactGroupMembership": {"contactGroupResourceName": "contactGroups/myContacts"}},
+                        {"contactGroupMembership": {"contactGroupResourceName": "contactGroups/work"}},
+                    ]
+                },
+            ),
+            Contact(
+                resource_name="people/lb2",
+                display_name="No Label Person",
+                emails=["nolabel@example.com"],
+                etag="elb2",
+                raw_json={
+                    "memberships": [
+                        {"contactGroupMembership": {"contactGroupResourceName": "contactGroups/myContacts"}},
+                    ]
+                },
+            ),
+        ]
+        db.upsert_contacts(contacts_with_labels)
+        results = db.get_contacts_by_label("contactGroups/work")
+        assert len(results) == 1
+        assert results[0].resource_name == "people/lb1"
+
+    def test_persistent_connection(self, db, sample_contacts):
+        """Persistent connection is reused across operations."""
+        db.upsert_contacts(sample_contacts)
+        # Multiple operations should work without creating new connections
+        db.get_contacts()
+        db.get_stats()
+        db.search("alice")
+        db.get_domain_counts()
+        assert db.get_contact("people/c1") is not None

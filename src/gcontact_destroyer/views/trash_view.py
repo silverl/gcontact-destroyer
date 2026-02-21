@@ -36,6 +36,7 @@ class TrashView(Container):
         self.db = db
         self._contacts: list[Contact] = []
         self._search_query: str = ""
+        self._search_timer = None
 
     def compose(self) -> ComposeResult:
         yield Input(
@@ -70,6 +71,7 @@ class TrashView(Container):
         self._contacts = [
             c for c in self._contacts if c.display_name or c.emails or c.phones
         ]
+        self._group_names = self.db.get_group_names()
 
         table = self.table
         prev_row = restore_cursor if restore_cursor is not None else table.cursor_row
@@ -113,9 +115,13 @@ class TrashView(Container):
         contact = self._get_selected_contact()
         if contact is None:
             return
+        row_idx = self.table.cursor_row
         self.app._undo_stack.append((contact.resource_name, contact.status))
         self.db.set_status(contact.resource_name, Status.UNMARKED)
-        self.reload_contacts()
+        self._contacts.pop(row_idx)
+        self.table.remove_row(contact.resource_name)
+        if self.table.row_count > 0:
+            self.table.move_cursor(row=min(row_idx, self.table.row_count - 1))
         self.post_message(self.StatusChanged())
 
     def action_undo(self) -> None:
@@ -131,9 +137,13 @@ class TrashView(Container):
         contact = self._get_selected_contact()
         if contact is None:
             return
+        row_idx = self.table.cursor_row
         self.app._undo_stack.append((contact.resource_name, contact.status))
         self.db.set_status(contact.resource_name, Status.PROTECTED)
-        self.reload_contacts()
+        self._contacts.pop(row_idx)
+        self.table.remove_row(contact.resource_name)
+        if self.table.row_count > 0:
+            self.table.move_cursor(row=min(row_idx, self.table.row_count - 1))
         self.post_message(self.StatusChanged())
 
     def action_focus_search(self) -> None:
@@ -147,6 +157,12 @@ class TrashView(Container):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._search_query = event.value
+        if self._search_timer is not None:
+            self._search_timer.stop()
+        self._search_timer = self.set_timer(0.2, self._do_search)
+
+    def _do_search(self) -> None:
+        self._search_timer = None
         self.reload_contacts()
 
     def on_key(self, event) -> None:
@@ -187,7 +203,7 @@ class TrashView(Container):
 
         self.app.push_screen(
             ContactDetailScreen(
-                self._contacts, index, group_names=self.db.get_group_names()
+                self._contacts, index, group_names=self._group_names
             ),
             handle_result,
         )

@@ -180,6 +180,56 @@ class TestContact:
         c = Contact(resource_name="people/c1", raw_json={})
         assert c.urls == []
 
+    def test_notes_with_dict_raw_json(self):
+        """notes property works with dict raw_json (no isinstance guard needed)."""
+        c = Contact(
+            resource_name="people/c1",
+            raw_json={"biographies": [{"value": "Test note"}]},
+        )
+        assert c.notes == "Test note"
+
+    def test_nickname_with_dict_raw_json(self):
+        """nickname property works with dict raw_json (no isinstance guard needed)."""
+        c = Contact(
+            resource_name="people/c1",
+            raw_json={"nicknames": [{"value": "Testy"}]},
+        )
+        assert c.nickname == "Testy"
+
+    def test_birthday_with_dict_raw_json(self):
+        """birthday property works with dict raw_json (no isinstance guard needed)."""
+        c = Contact(
+            resource_name="people/c1",
+            raw_json={"birthdays": [{"date": {"year": 1990, "month": 1, "day": 15}}]},
+        )
+        assert c.birthday == "Jan 15, 1990"
+
+    def test_urls_with_dict_raw_json(self):
+        """urls property works with dict raw_json (no isinstance guard needed)."""
+        c = Contact(
+            resource_name="people/c1",
+            raw_json={"urls": [{"value": "https://example.com"}]},
+        )
+        assert c.urls == ["https://example.com"]
+
+    def test_from_db_row_produces_dict_raw_json(self):
+        """from_db_row always produces dict raw_json, confirming isinstance guard is dead code."""
+        row = {
+            "resource_name": "people/c1",
+            "display_name": "Test",
+            "first_name": "T",
+            "last_name": "Est",
+            "emails": "[]",
+            "phones": "[]",
+            "organizations": "[]",
+            "status": "unmarked",
+            "etag": "e1",
+            "raw_json": '{"biographies": [{"value": "note"}]}',
+        }
+        contact = Contact.from_db_row(row)
+        assert isinstance(contact.raw_json, dict)
+        assert contact.notes == "note"
+
     def test_to_db_row_and_back(self):
         original = Contact(
             resource_name="people/c1",
